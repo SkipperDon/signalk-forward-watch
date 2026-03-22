@@ -8,7 +8,7 @@ AI-powered forward watch obstacle detection for Signal K. Monitors a bow-mounted
 
 ## Requirements
 
-- Signal K server **v2.22.1 or later** recommended (Node.js ≥ 18)
+- Signal K server **v2.23.0 or later** recommended (Node.js ≥ 18)
   - Earlier Signal K versions have an unrelated AIS TCP provider memory leak that causes server instability when AIS is active alongside this plugin
 - A bow-mounted IP camera with RTSP stream (ONVIF cameras auto-discovered)
 - ffmpeg installed on the host (`sudo apt install ffmpeg`)
@@ -53,7 +53,7 @@ Restart Signal K and enable the plugin in **Admin → Plugin Config → Forward 
 | **Camera Username** | `admin` | RTSP/ONVIF login username |
 | **Camera Password** | — | RTSP/ONVIF login password |
 | **RTSP URL** | auto | Full RTSP stream URL. If left blank, the plugin runs ONVIF discovery using the IP/user/pass above. Enter manually to skip discovery: `rtsp://user:pass@ip:554/stream1` |
-| **Detection interval (seconds)** | `30` | How often to grab a frame and run detection. Lower = more CPU. 30s is recommended for Raspberry Pi 4. |
+| **Detection interval (seconds)** | `300` | How often to grab a frame and run detection. Lower = more CPU. Default 300s is conservative; v0.2.0+ worker thread allows 60s on Raspberry Pi 4 without impacting Signal K. |
 | **Alert cooldown (seconds)** | `30` | Minimum time between repeat alerts for the same target type and quadrant. Prevents alarm flooding. |
 | **Enable audio alarm** | `false` | Plays a system beep on detection within 100m. Requires audio output on the host. |
 | **Confidence threshold** | `0.4` | Minimum detection confidence (0–1). Lower = more detections but more false positives. 0.4 is a good starting point. |
@@ -217,7 +217,7 @@ A Signal K notification is sent for any detection **within 100m**. One notificat
 - Check the camera IP is reachable from the Signal K host.
 
 **High CPU usage**
-- Increase the detection interval. 30s is recommended for Pi 4.
+- Increase the detection interval. Default is 300s; v0.2.0+ worker thread allows 60s on Pi 4 without impacting Signal K performance.
 - The plugin guards against overlapping inference cycles — if one cycle takes longer than the interval, the next is skipped.
 
 **Distance estimates seem wrong**
