@@ -13,6 +13,11 @@ last.pt
 *.pt
 *Zone.Identifier
 
+# Internal project management files
+MEMORY.md
+PROJECT_CHECKLIST.md
+export_onnx.bat
+
 # Git
 .git/
 .gitignore
