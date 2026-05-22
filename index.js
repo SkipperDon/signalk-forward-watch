@@ -1,6 +1,7 @@
 const path = require('path');
 const CameraDiscovery = require('./plugin/camera-discovery');
 const RtspGrabber = require('./plugin/rtsp-grabber');
+const ContainerRtspGrabber = require('./plugin/container-rtsp-grabber');
 const Detector = require('./plugin/detector');
 const GpsCalculator = require('./plugin/gps-calculator');
 const SignalkOutput = require('./plugin/signalk-output');
@@ -43,6 +44,17 @@ module.exports = function(app) {
           minimum: 10,
           maximum: 600
         },
+        ffmpeg_mode: {
+          type: 'string',
+          title: 'FFmpeg execution mode',
+          enum: ['local', 'container'],
+          default: 'local'
+        },
+        ffmpeg_container_image: {
+          type: 'string',
+          title: 'FFmpeg container image',
+          default: 'lscr.io/linuxserver/ffmpeg'
+        },
         alert_cooldown: {
           type: 'number',
           title: 'Seconds before re-alerting same target',
@@ -69,11 +81,21 @@ module.exports = function(app) {
       required: ['camera_ip', 'camera_user', 'camera_pass']
     },
 
-    start: async function(options) {
+    start: function(options) {
+      options = options || {};
+      this.startAsync(options).catch((err) => {
+        app.debug('Forward Watch startup failed: ' + err.message);
+        if (app.setPluginError) app.setPluginError('Startup failed: ' + err.message);
+      });
+    },
+
+    startAsync: async function(options) {
       app.debug('Starting Forward Watch plugin');
 
       this.discovery = new CameraDiscovery(app);
-      this.grabber = new RtspGrabber(app);
+      this.grabber = options.ffmpeg_mode === 'container'
+        ? new ContainerRtspGrabber(app, options)
+        : new RtspGrabber(app);
       this.detector = new Detector(app, MODEL_PATH);
       this.gpsCalc = new GpsCalculator(app);
       this.skOutput = new SignalkOutput(app, options);
@@ -90,18 +112,27 @@ module.exports = function(app) {
         const cameras = await this.discovery.scan();
         if (cameras.length > 0) {
           rtspUrl = cameras[0].rtsp_url;
-          app.debug(`Discovered camera: ${rtspUrl}`);
+          app.debug(`Discovered camera: ${redactRtspUrl(rtspUrl)}`);
         } else {
           rtspUrl = await this.discovery.buildRtspUrl(options.camera_ip, options.camera_user, options.camera_pass);
-          app.debug(`Using fallback RTSP URL: ${rtspUrl}`);
+          app.debug(`Using fallback RTSP URL: ${redactRtspUrl(rtspUrl)}`);
         }
       }
+      rtspUrl = addRtspCredentials(rtspUrl, options.camera_user, options.camera_pass);
 
       this.rtspUrl = rtspUrl;
+      if (this.grabber.start) {
+        await this.grabber.start(this.rtspUrl);
+      }
+
       app.debug(`Starting detection loop every ${options.detection_interval}s`);
+      if (app.setPluginStatus) {
+        const mode = options.ffmpeg_mode === 'container' ? 'container FFmpeg' : 'local FFmpeg';
+        app.setPluginStatus(`Running with ${mode}`);
+      }
 
       this.running = false;
-      this.interval = setInterval(async () => {
+      const detectOnce = async () => {
         if (this.running) return; // skip if previous inference still in progress
         this.running = true;
         try {
@@ -133,7 +164,10 @@ module.exports = function(app) {
         } finally {
           this.running = false;
         }
-      }, (options.detection_interval || 300) * 1000);
+      };
+
+      this.interval = setInterval(detectOnce, (options.detection_interval || 300) * 1000);
+      detectOnce();
     },
 
     stop: function() {
@@ -146,3 +180,31 @@ module.exports = function(app) {
 
   return plugin;
 };
+
+function addRtspCredentials(rtspUrl, user, pass) {
+  if (!rtspUrl || !user || !pass) return rtspUrl;
+
+  try {
+    const parsed = new URL(rtspUrl);
+    if (parsed.protocol !== 'rtsp:' && parsed.protocol !== 'rtsps:') return rtspUrl;
+    if (parsed.username || parsed.password) return rtspUrl;
+
+    parsed.username = user;
+    parsed.password = pass;
+    return parsed.toString();
+  } catch (err) {
+    return rtspUrl;
+  }
+}
+
+function redactRtspUrl(rtspUrl) {
+  if (!rtspUrl) return rtspUrl;
+
+  try {
+    const parsed = new URL(rtspUrl);
+    if (parsed.password) parsed.password = '***';
+    return parsed.toString();
+  } catch (err) {
+    return rtspUrl;
+  }
+}

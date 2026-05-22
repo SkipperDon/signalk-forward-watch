@@ -11,7 +11,9 @@ AI-powered forward watch obstacle detection for Signal K. Monitors a bow-mounted
 - Signal K server **v2.23.0 or later** recommended (Node.js ≥ 18)
   - Earlier Signal K versions have an unrelated AIS TCP provider memory leak that causes server instability when AIS is active alongside this plugin
 - A bow-mounted IP camera with RTSP stream (ONVIF cameras auto-discovered)
-- ffmpeg installed on the host (`sudo apt install ffmpeg`)
+- ffmpeg available through one of these modes:
+  - local mode: ffmpeg installed beside Signal K (`sudo apt install ffmpeg`)
+  - container mode: [`signalk-container`](https://github.com/dirkwa/signalk-container) installed and configured with Docker or Podman access
 - Raspberry Pi 4 or better (CPU inference, no GPU required)
 
 ---
@@ -52,12 +54,24 @@ Restart Signal K and enable the plugin in **Admin → Plugin Config → Forward 
 | **Camera IP Address** | — | IP address of your bow camera (e.g. `192.168.1.100`) |
 | **Camera Username** | `admin` | RTSP/ONVIF login username |
 | **Camera Password** | — | RTSP/ONVIF login password |
-| **RTSP URL** | auto | Full RTSP stream URL. If left blank, the plugin runs ONVIF discovery using the IP/user/pass above. Enter manually to skip discovery: `rtsp://user:pass@ip:554/stream1` |
+| **RTSP URL** | auto | Full RTSP stream URL. If left blank, the plugin runs ONVIF discovery using the IP/user/pass above. Enter manually to skip discovery: `rtsp://user:pass@ip:554/stream1`. If the URL has no embedded credentials, the Camera Username and Camera Password fields are applied automatically. |
 | **Detection interval (seconds)** | `300` | How often to grab a frame and run detection. Lower = more CPU. Default 300s is conservative; v0.2.0+ worker thread allows 60s on Raspberry Pi 4 without impacting Signal K. |
+| **FFmpeg execution mode** | `local` | `local` uses ffmpeg installed in the Signal K environment. `container` runs a persistent FFmpeg sidecar through `signalk-container`. |
+| **FFmpeg container image** | `lscr.io/linuxserver/ffmpeg` | Container image used when FFmpeg execution mode is `container`. Advanced users may include a tag, for example `lscr.io/linuxserver/ffmpeg:version-6.1-cli`; when no tag is specified, `latest` is used. |
 | **Alert cooldown (seconds)** | `30` | Minimum time between repeat alerts for the same target type and quadrant. Prevents alarm flooding. |
 | **Enable audio alarm** | `false` | Plays a system beep on detection within 100m. Requires audio output on the host. |
 | **Confidence threshold** | `0.4` | Minimum detection confidence (0–1). Lower = more detections but more false positives. 0.4 is a good starting point. |
 | **Show detections in OpenCPN** | `true` | Sends detections to OpenCPN as AIS targets on the chart. Requires boat GPS. |
+
+### FFmpeg Container Mode
+
+Container mode is intended for Signal K deployments where the server itself runs in Docker or Podman and installing ffmpeg inside the Signal K image is undesirable. Install and enable `signalk-container`, then set **FFmpeg execution mode** to `container`.
+
+Forward Watch starts one persistent managed container named `sk-forward-watch-ffmpeg`. It runs ffmpeg for the lifetime of the plugin, writes the latest RTSP frame to the plugin data directory, and is stopped when the plugin is disabled. The container is not recreated for every frame.
+
+The container gets access to the Signal K config root via `signalkConfigRootMount`, then writes to Forward Watch's own `plugin-config-data/signalk-forward-watch/frames/latest.jpg` path. This keeps the frame file visible to the detector whether Signal K is running bare-metal or inside a container.
+
+If the container keeps running but stops updating `latest.jpg`, Forward Watch treats the frame as stale and restarts the managed FFmpeg container. This handles RTSP sessions that remain alive at Docker level while ffmpeg is no longer producing fresh JPEGs.
 
 ---
 
@@ -213,8 +227,14 @@ A Signal K notification is sent for any detection **within 100m**. One notificat
 
 **No detections, camera not connecting**
 - Check your RTSP URL is correct. Test it with VLC on another device.
-- Make sure ffmpeg is installed: `ffmpeg -version`
+- In local FFmpeg mode, make sure ffmpeg is installed: `ffmpeg -version`
+- In container FFmpeg mode, make sure `signalk-container` is enabled and reports a working Docker or Podman runtime.
 - Check the camera IP is reachable from the Signal K host.
+
+**Container FFmpeg mode starts but no frames appear**
+- Check the Signal K server log with Forward Watch debug enabled. FFmpeg container output is forwarded as `[ffmpeg-container] ...`.
+- Open the `signalk-container` config panel and inspect the `sk-forward-watch-ffmpeg` container logs.
+- If Signal K itself runs in a container, verify the `signalk-container` deployment doctor reports `ok` and can resolve the Signal K container/config root.
 
 **High CPU usage**
 - Increase the detection interval. Default is 300s; v0.2.0+ worker thread allows 60s on Pi 4 without impacting Signal K performance.
