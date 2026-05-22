@@ -113,7 +113,8 @@ module.exports = function(app) {
           // Get boat position from Signal K
           const boatLat = app.getSelfPath('navigation.position.value.latitude') || null;
           const boatLon = app.getSelfPath('navigation.position.value.longitude') || null;
-          const boatHeading = app.getSelfPath('navigation.headingTrue.value') || 0;
+          const headingTrue = app.getSelfPath('navigation.headingTrue.value');
+          const boatHeading = typeof headingTrue === 'number' ? radiansToDegrees(headingTrue) : 0;
 
           // Enrich detections with GPS position
           const enriched = detections.map(d => {
@@ -146,3 +147,7 @@ module.exports = function(app) {
 
   return plugin;
 };
+
+function radiansToDegrees(value) {
+  return value * 180 / Math.PI;
+}
