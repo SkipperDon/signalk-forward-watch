@@ -139,6 +139,7 @@ module.exports = function(app) {
     stop: function() {
       app.debug('Stopping Forward Watch plugin');
       if (this.interval) clearInterval(this.interval);
+      if (this.ocpnOutput) this.ocpnOutput.stop();
       if (this.grabber) this.grabber.stop();
       if (this.detector) this.detector.terminate();
     }

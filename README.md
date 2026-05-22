@@ -67,14 +67,16 @@ When **Show detections in OpenCPN** is enabled, each detected object is written 
 
 | Detection | Chart label | MMSI |
 |-----------|-------------|------|
-| ship | FW-SHIP (confidence%) | 800000001 |
-| boat | FW-BOAT (confidence%) | 800000002 |
-| debris | FW-DEBRIS (confidence%) | 800000003 |
-| buoy | FW-BUOY (confidence%) | 800000004 |
-| kayak | FW-KAYAK (confidence%) | 800000005 |
-| log | FW-LOG (confidence%) | 800000006 |
+| ship | FW-SHIP-1..99 (confidence%) | 800000001, 800000011, ... |
+| boat | FW-BOAT-1..99 (confidence%) | 800000002, 800000012, ... |
+| debris | FW-DEBRIS-1..99 (confidence%) | 800000003, 800000013, ... |
+| buoy | FW-BUOY-1..99 (confidence%) | 800000004, 800000014, ... |
+| kayak | FW-KAYAK-1..99 (confidence%) | 800000005, 800000015, ... |
+| log | FW-LOG-1..99 (confidence%) | 800000006, 800000016, ... |
 
-Each class uses a fixed MMSI so the same target updates in place on the chart rather than spawning new ones on every detection cycle.
+The final MMSI digit identifies the detection class, preserving the original single-target values for the first object of each class. Simultaneous detections of the same class are sorted left-to-right in the camera frame and assigned slots 1-99, so multiple boats can appear as separate chart targets instead of overwriting the same fake vessel.
+
+Forward Watch clears virtual AIS targets that are no longer detected on the next detection cycle. It removes only the Signal K paths it publishes for its own fake MMSI contexts, so the chart stays aligned with the current AI detections.
 
 ### OpenCPN (Signal K connection)
 
