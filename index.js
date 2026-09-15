@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 const CameraDiscovery = require('./plugin/camera-discovery');
 const RtspGrabber = require('./plugin/rtsp-grabber');
 const Detector = require('./plugin/detector');
@@ -7,6 +8,12 @@ const SignalkOutput = require('./plugin/signalk-output');
 const OpenCPNOutput = require('./plugin/opencpn-output');
 
 const MODEL_PATH = path.join(__dirname, 'models', 'forward-watch.onnx');
+
+if (!fs.existsSync(MODEL_PATH)) {
+  throw new Error(
+    'signalk-forward-watch: bundled model missing at ' + MODEL_PATH +
+    ' — reinstall the plugin. This build never downloads models.');
+}
 
 module.exports = function(app) {
   const plugin = {
