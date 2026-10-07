@@ -141,3 +141,63 @@ t2('stopped then underway: raises after persistence once moving', () => {
   assert2.deepStrictEqual(tr.update(['ship'], 3.0).raise, []);
 });
 
+
+describe('Urgent alerts (life-safety override)', () => {
+  let tracker;
+
+  beforeEach(() => {
+    tracker = new AlertTracker(3, 2, 1.0);
+  });
+
+  it('urgent class raises immediately on first detection', () => {
+    // Urgent class seen only once but should raise immediately
+    const result = tracker.update(['buoy'], 2.0, ['buoy']);
+    assert.deepEqual(result.raise, ['buoy'], 'urgent buoy should raise on first check');
+    assert.deepEqual(tracker.getActiveAlerts(), ['buoy']);
+  });
+
+  it('urgent class while stopped does NOT raise', () => {
+    // Stopped = SOG < 1.0 kn; 0.4 m/s * 1.94384 = ~0.777 kn (stopped)
+    const result = tracker.update(['buoy'], 0.4, ['buoy']);
+    assert.deepEqual(result.raise, [], 'urgent buoy should NOT raise while vessel stopped');
+    assert.deepEqual(tracker.getActiveAlerts(), []);
+  });
+
+  it('urgent class suppressed by stopped takes precedence', () => {
+    // First, detect while moving -> urgent raises
+    let result = tracker.update(['debris'], 2.0, ['debris']);
+    assert.deepEqual(result.raise, ['debris']);
+
+    // Then vessel stops -> active urgent alert should clear
+    result = tracker.update(['debris'], 0.4, ['debris']);
+    assert.deepEqual(result.clear, ['debris'], 'stopped suppression should clear active urgent alert');
+    assert.deepEqual(tracker.getActiveAlerts(), []);
+  });
+
+  it('regular class still requires persistChecks even if urgent exists', () => {
+    // Urgent class raises immediately
+    tracker.update(['debris'], 2.0, ['debris']);
+    assert.deepEqual(tracker.getActiveAlerts(), ['debris']);
+
+    // Regular class needs 3 checks
+    let result = tracker.update(['log'], 2.0, []);
+    assert.deepEqual(result.raise, [], 'regular log should not raise on 1st check');
+
+    result = tracker.update(['log'], 2.0, []);
+    assert.deepEqual(result.raise, [], 'regular log should not raise on 2nd check');
+
+    result = tracker.update(['log'], 2.0, []);
+    assert.deepEqual(result.raise, ['log'], 'regular log should raise on 3rd check');
+  });
+
+  it('class transitions between urgent and non-urgent', () => {
+    // First detection is NOT urgent -> needs persistence
+    let result = tracker.update(['vessel'], 2.0, []);
+    assert.deepEqual(result.raise, []);
+
+    // Now within urgent range -> should raise immediately
+    result = tracker.update(['vessel'], 2.0, ['vessel']);
+    assert.deepEqual(result.raise, ['vessel'], 'should raise urgent immediately despite 2 prior checks');
+    assert.deepEqual(tracker.getActiveAlerts(), ['vessel']);
+  });
+});

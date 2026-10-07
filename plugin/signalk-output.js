@@ -12,6 +12,7 @@ class SignalkOutput {
    * @param {number} [options.persistence_checks=3] - Checks before raising
    * @param {number} [options.clear_checks=2] - Checks before clearing
    * @param {number} [options.stopped_speed_kn=1.0] - Stopped threshold
+   * @param {number} [options.immediate_alert_m=75] - Distance threshold for immediate (urgent) alerts
    */
   constructor(app, options = {}) {
     this.app = app;
@@ -28,15 +29,21 @@ class SignalkOutput {
 
   /**
    * Process detections and vessel SOG to manage alert state
-   * @param {Array} detections - Detection objects with class_name, confidence, etc
+   * @param {Array} detections - Detection objects with class_name, confidence, distance, etc
    * @param {number|null} sogMs - Speed Over Ground in m/s
    */
   sendDetections(detections, sogMs = null) {
     // Extract class names from detections
     const classesSeen = (detections || []).map(d => d.class_name).filter(Boolean);
 
-    // Update tracker and get state transitions
-    const { raise, clear, stopped } = this.tracker.update(classesSeen, sogMs);
+    // Calculate urgent classes: objects within dangerous proximity (life-safety override)
+    const urgentClasses = (detections || [])
+      .filter(d => typeof d.distance === 'number' && d.distance <= (this.options.immediate_alert_m ?? 75))
+      .map(d => d.class_name)
+      .filter(Boolean);
+
+    // Update tracker and get state transitions (with urgent classes)
+    const { raise, clear, stopped } = this.tracker.update(classesSeen, sogMs, urgentClasses);
 
     // Always publish the raw detections
     this.app.handleMessage(PLUGIN_ID, {
@@ -52,14 +59,15 @@ class SignalkOutput {
     for (const className of raise) {
       let severity = 'warn';
       let message = `${className} detected`;
+      let isUrgent = urgentClasses.includes(className);
 
       // Find distance if available
       const detection = detections.find(d => d.class_name === className);
-      if (detection && detection.distance) {
+      if (detection && typeof detection.distance === 'number') {
         const dist = Math.round(detection.distance);
-        if (dist <= 30) severity = 'emergency';
+        if (isUrgent || dist <= 30) severity = 'emergency';
         else if (dist <= 75) severity = 'warn';
-        message = `${className} detected ${dist}m ahead`;
+        message = `${className} detected ${dist}m ahead${isUrgent ? ' — IMMEDIATE ALERT' : ''}`;
       }
 
       this.app.handleMessage(PLUGIN_ID, {

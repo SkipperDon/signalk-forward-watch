@@ -92,6 +92,13 @@ module.exports = function(app) {
           description: 'Number of consecutive frames unseen required to clear an active alert.',
           default: 2,
           minimum: 1
+        },
+        immediate_alert_m: {
+          type: 'number',
+          title: 'Alert immediately when closer than (m)',
+          description: 'Life-safety override: Objects within this distance raise alerts immediately, skipping persistence checks.',
+          default: 75,
+          minimum: 1
         }
       },
       required: ['camera_ip', 'camera_user', 'camera_pass']
@@ -110,6 +117,7 @@ module.exports = function(app) {
         persistence_checks: options.persistence_checks ?? 3,
         clear_checks: options.clear_checks ?? 2,
         stopped_speed_kn: options.stopped_speed_kn ?? 1.0,
+        immediate_alert_m: options.immediate_alert_m ?? 75,
         audio_alarm: options.audio_alarm
       });
       

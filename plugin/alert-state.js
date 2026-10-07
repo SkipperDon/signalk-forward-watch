@@ -9,6 +9,7 @@ const MS_TO_KNOTS = 1.94384;
  * Manages detection hysteresis and state tracking for forward watch alerts.
  * Implements persistence checks before raising alerts, unseen checks before
  * clearing alerts, and vessel stopped state detection via SOG.
+ * Supports life-safety urgent alerts that bypass persistence checks.
  */
 class AlertTracker {
   /**
@@ -44,9 +45,10 @@ class AlertTracker {
    *
    * @param {string[]|Set<string>} classesSeen - Array or Set of detected class names in the current frame.
    * @param {number|null|undefined} sogMs - Vessel Speed Over Ground in meters per second.
+   * @param {string[]} [urgentClasses=[]] - Class names within immediate alert proximity (life-safety override). Raises immediately if not stopped and not active.
    * @returns {{ raise: string[], clear: string[], stopped: boolean }} State changes and vessel stopped flag.
    */
-  update(classesSeen, sogMs) {
+  update(classesSeen, sogMs, urgentClasses = []) {
     const raise = [];
     const clear = [];
 
@@ -58,9 +60,37 @@ class AlertTracker {
     }
 
     const seenSet = new Set(Array.isArray(classesSeen) ? classesSeen : classesSeen || []);
+    const urgentSet = new Set(Array.isArray(urgentClasses) ? urgentClasses : []);
 
-    // 1. Process all classes seen in current frame
+    // 0. URGENT ALERTS: Raise immediately if within dangerous proximity, not stopped, not already active
+    for (const className of urgentSet) {
+      if (seenSet.has(className)) {
+        if (!this.states.has(className)) {
+          this.states.set(className, {
+            consecutiveSeen: 0,
+            consecutiveUnseen: 0,
+            active: false
+          });
+        }
+        const state = this.states.get(className);
+        state.consecutiveSeen += 1;
+        state.consecutiveUnseen = 0;
+
+        // Urgent: raise immediately if not stopped and not already active (life-safety)
+        if (!stopped && !state.active) {
+          state.active = true;
+          raise.push(className);
+        }
+      }
+    }
+
+    // 1. Process all other classes seen in current frame
     for (const className of seenSet) {
+      // Skip if already processed as urgent
+      if (urgentSet.has(className)) {
+        continue;
+      }
+
       if (!this.states.has(className)) {
         this.states.set(className, {
           consecutiveSeen: 0,
