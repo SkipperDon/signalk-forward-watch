@@ -71,6 +71,27 @@ module.exports = function(app) {
           type: 'boolean',
           title: 'Show detections in OpenCPN',
           default: true
+        },
+        stopped_speed_kn: {
+          type: 'number',
+          title: 'Stopped Vessel Speed Threshold (knots)',
+          description: 'Vessel is considered stopped when SOG is below this value. Suppresses alerts when stopped.',
+          default: 1.0,
+          minimum: 0
+        },
+        persistence_checks: {
+          type: 'integer',
+          title: 'Persistence Checks',
+          description: 'Number of consecutive detection frames required to raise an alert.',
+          default: 3,
+          minimum: 1
+        },
+        clear_checks: {
+          type: 'integer',
+          title: 'Clear Checks',
+          description: 'Number of consecutive frames unseen required to clear an active alert.',
+          default: 2,
+          minimum: 1
         }
       },
       required: ['camera_ip', 'camera_user', 'camera_pass']
@@ -83,7 +104,15 @@ module.exports = function(app) {
       this.grabber = new RtspGrabber(app);
       this.detector = new Detector(app, MODEL_PATH);
       this.gpsCalc = new GpsCalculator(app);
-      this.skOutput = new SignalkOutput(app, options);
+      
+      // Pass alert tracker config to SignalkOutput
+      this.skOutput = new SignalkOutput(app, {
+        persistence_checks: options.persistence_checks ?? 3,
+        clear_checks: options.clear_checks ?? 2,
+        stopped_speed_kn: options.stopped_speed_kn ?? 1.0,
+        audio_alarm: options.audio_alarm
+      });
+      
       this.ocpnOutput = new OpenCPNOutput(app);
 
       // Load ONNX model
@@ -106,6 +135,46 @@ module.exports = function(app) {
 
       this.rtspUrl = rtspUrl;
       app.debug(`Starting detection loop every ${options.detection_interval}s`);
+
+      // Track SOG from Signal K for alert suppression
+      let currentSogMs = null;
+      let unsubscribeSOG = null;
+
+      const sogSubscription = {
+        context: 'vessels.self',
+        subscribe: [
+          {
+            path: 'navigation.speedOverGround',
+            period: 1000
+          }
+        ]
+      };
+
+      if (app.subscriptionmanager) {
+        const unsubs = [];
+        app.subscriptionmanager.subscribe(
+          sogSubscription,
+          unsubs,
+          (err) => {
+            if (err) {
+              app.debug(`SOG subscription error: ${err}`);
+            }
+          },
+          (delta) => {
+            if (!delta.updates) return;
+            for (const update of delta.updates) {
+              for (const val of update.values) {
+                if (val.path === 'navigation.speedOverGround') {
+                  currentSogMs = val.value;
+                }
+              }
+            }
+          }
+        );
+        if (unsubs.length > 0) {
+          unsubscribeSOG = unsubs[0];
+        }
+      }
 
       this.running = false;
       this.interval = setInterval(async () => {
@@ -133,7 +202,9 @@ module.exports = function(app) {
             } : {});
           });
 
-          this.skOutput.sendDetections(enriched);
+          // Send to Signal K with alert tracker state management and current SOG
+          this.skOutput.sendDetections(enriched, currentSogMs);
+          
           if (options.opencpn_enabled !== false) this.ocpnOutput.sendDetections(enriched);
         } catch (err) {
           app.debug('Detection loop error: ' + err.message);
@@ -141,6 +212,8 @@ module.exports = function(app) {
           this.running = false;
         }
       }, (options.detection_interval || 300) * 1000);
+
+      this.unsubscribeSOG = unsubscribeSOG;
     },
 
     stop: function() {
@@ -148,6 +221,8 @@ module.exports = function(app) {
       if (this.interval) clearInterval(this.interval);
       if (this.grabber) this.grabber.stop();
       if (this.detector) this.detector.terminate();
+      if (this.skOutput) this.skOutput.reset();
+      if (this.unsubscribeSOG) this.unsubscribeSOG();
     }
   };
 
