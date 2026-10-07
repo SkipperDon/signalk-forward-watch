@@ -120,3 +120,24 @@ describe('AlertTracker', () => {
     });
   });
 });
+
+// S232 regression: S230 dock replay raised and cleared on every check while stopped
+const { test: t2 } = require('node:test');
+const assert2 = require('node:assert');
+const Tracker2 = require('../plugin/alert-state.js');
+t2('stopped: object seen many checks never raises and never emits clear', () => {
+  const tr = new Tracker2(3, 2, 1.0);
+  for (let i = 0; i < 10; i++) {
+    const r = tr.update(['ship'], 0.05);
+    assert2.deepStrictEqual(r.raise, [], `raise on check ${i}`);
+    assert2.deepStrictEqual(r.clear, [], `clear on check ${i}`);
+  }
+});
+t2('stopped then underway: raises after persistence once moving', () => {
+  const tr = new Tracker2(3, 2, 1.0);
+  for (let i = 0; i < 5; i++) tr.update(['ship'], 0.0);
+  const r = tr.update(['ship'], 3.0);
+  assert2.deepStrictEqual(r.raise, ['ship']);
+  assert2.deepStrictEqual(tr.update(['ship'], 3.0).raise, []);
+});
+

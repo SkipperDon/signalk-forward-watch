@@ -74,7 +74,8 @@ class AlertTracker {
       state.consecutiveUnseen = 0;
 
       // Raise alert if threshold met and not already active
-      if (!state.active && state.consecutiveSeen >= this.persistChecks) {
+      // Never raise while stopped (moored) — S232 replay found raise+clear every check at the dock
+      if (!stopped && !state.active && state.consecutiveSeen >= this.persistChecks) {
         state.active = true;
         raise.push(className);
       }
