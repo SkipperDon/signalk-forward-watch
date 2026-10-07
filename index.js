@@ -46,8 +46,8 @@ module.exports = function(app) {
         detection_interval: {
           type: 'number',
           title: 'Detection interval in seconds',
-          default: 300,
-          minimum: 10,
+          default: 5,
+          minimum: 2,
           maximum: 600
         },
         alert_cooldown: {
@@ -211,7 +211,7 @@ module.exports = function(app) {
         } finally {
           this.running = false;
         }
-      }, (options.detection_interval || 300) * 1000);
+      }, (options.detection_interval || 5) * 1000);
 
       this.unsubscribeSOG = unsubscribeSOG;
     },
