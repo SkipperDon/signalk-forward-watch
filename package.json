@@ -20,7 +20,8 @@
   "files": [
     "index.js",
     "plugin/",
-    "models/forward-watch.onnx"
+    "models/forward-watch.onnx",
+    "CHANGELOG.md"
   ],
   "main": "index.js",
   "signalk-plugin": {
